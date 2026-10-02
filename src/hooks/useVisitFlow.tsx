@@ -149,7 +149,7 @@ export function useTodaysPrescriptions(patientId?: string | null) {
     queryFn: async () => {
       const { data, error } = await (supabase as any)
         .from("prescriptions")
-        .select("*, staff:dentist_id(full_name), prescription_medications(*)")
+        .select("*, staff(full_name), prescription_medications(*)")
         .eq("org_id", currentOrg?.org_id)
         .eq("patient_id", patientId)
         .gte("created_at", `${today()}T00:00:00`)
