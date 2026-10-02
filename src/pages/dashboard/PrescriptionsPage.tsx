@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { usePatientContext } from "@/hooks/usePatientContext";
+import { PatientVisitBar } from "@/components/dashboard/PatientVisitBar";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Plus, Printer, FileText } from "lucide-react";
@@ -21,10 +23,14 @@ export default function PrescriptionsPage() {
   const terms = useClinicTerms();
   const { currentOrg } = useOrg();
   const [rxOpen, setRxOpen] = useState(false);
-  const { data: prescriptions = [], isLoading } = usePrescriptions();
+  const { data: allPrescriptions = [], isLoading } = usePrescriptions();
+  const { patientId, setPatientId, consumeFlag } = usePatientContext();
+  const prescriptions = patientId ? allPrescriptions.filter((rx) => rx.patient_id === patientId) : allPrescriptions;
+  useEffect(() => { if (consumeFlag("new")) setRxOpen(true); }, [consumeFlag]);
 
   return (
     <div className="space-y-6">
+      {patientId && <PatientVisitBar patientId={patientId} onClear={() => setPatientId("")} />}
       <PageHeader
         title="Prescriptions"
         description="Digital prescriptions and medication records"
@@ -121,7 +127,7 @@ export default function PrescriptionsPage() {
           ))}
         </motion.div>
       )}
-      <CreatePrescriptionDialog open={rxOpen} onOpenChange={setRxOpen} />
+      <CreatePrescriptionDialog open={rxOpen} onOpenChange={setRxOpen} preselectedPatientId={patientId || undefined} />
     </div>
   );
 }

@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { usePatientContext } from "@/hooks/usePatientContext";
+import { PatientVisitBar } from "@/components/dashboard/PatientVisitBar";
 import { useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -168,7 +170,7 @@ export default function ConsentFormsPage() {
       content: consentForm.content,
       created_by: user?.id,
     }, {
-      onSuccess: () => { setFormDialogOpen(false); setConsentForm({ patientId: "", templateId: "", title: "", content: "" }); },
+      onSuccess: () => { setFormDialogOpen(false); setConsentForm({ patientId: ctxPatientId || "", templateId: "", title: "", content: "" }); },
     });
   };
 
@@ -206,13 +208,24 @@ export default function ConsentFormsPage() {
     });
   };
 
+  const { patientId: ctxPatientId, setPatientId: setCtxPatient, consumeFlag } = usePatientContext();
+  useEffect(() => {
+    if (ctxPatientId) {
+      setConsentForm((f) => ({ ...f, patientId: ctxPatientId }));
+      setUploadPatientId(ctxPatientId);
+    }
+  }, [ctxPatientId]);
+  useEffect(() => { if (consumeFlag("new")) setFormDialogOpen(true); }, [consumeFlag]);
+
   const filtered = forms.filter((f: any) => {
+    if (ctxPatientId && f.patient_id !== ctxPatientId) return false;
     const name = `${f.patients?.first_name} ${f.patients?.last_name}`.toLowerCase();
     return name.includes(search.toLowerCase()) || f.title.toLowerCase().includes(search.toLowerCase());
   });
 
   return (
     <div className="space-y-6">
+      {ctxPatientId && <PatientVisitBar patientId={ctxPatientId} onClear={() => setCtxPatient("")} />}
       <PageHeader title="Consent Forms" description="Manage consent form templates and patient consents">
         <div className="flex gap-2 flex-wrap" data-tour="consent-forms-actions">
           <Button type="button" variant="outline" size="sm" onClick={(e) => { e.preventDefault(); setUploadDialogOpen(true); }}>
