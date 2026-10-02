@@ -12,7 +12,12 @@ import { usePatients } from "@/hooks/usePatients";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { TableSkeleton } from "@/components/dashboard/TableSkeleton";
 import { EmptyState } from "@/components/dashboard/EmptyState";
-import { Plus, Clock, User, ArrowRight, CheckCircle2 } from "lucide-react";
+import { Plus, Clock, User, ArrowRight, CheckCircle2, Grid3x3, NotebookPen, ClipboardList, Receipt } from "lucide-react";
+import { Link } from "react-router-dom";
+import { useClinicLinks } from "@/hooks/usePatientContext";
+import { useClinicTerms } from "@/hooks/useClinicTerms";
+import { VisitCompletionDialog } from "@/components/dashboard/VisitCompletionDialog";
+import { supabase } from "@/integrations/supabase/client";
 import { motion } from "framer-motion";
 import { formatDistanceToNow } from "date-fns";
 
@@ -31,6 +36,18 @@ export default function WaitingListPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState("");
   const [notes, setNotes] = useState("");
+  const link = useClinicLinks();
+  const terms = useClinicTerms();
+  const [wrapUp, setWrapUp] = useState<{ patientId: string; name: string; treatmentId: string | null } | null>(null);
+
+  const openWrapUp = async (entry: any) => {
+    let treatmentId: string | null = null;
+    if (entry.appointment_id) {
+      const { data } = await (supabase as any).from("appointments").select("treatment_id").eq("id", entry.appointment_id).maybeSingle();
+      treatmentId = data?.treatment_id || null;
+    }
+    setWrapUp({ patientId: entry.patient_id, name: `${entry.patients?.first_name || ""} ${entry.patients?.last_name || ""}`.trim(), treatmentId });
+  };
 
   const activeQueue = queue.filter((q) => q.status !== "completed");
   const completedQueue = queue.filter((q) => q.status === "completed");
@@ -43,8 +60,9 @@ export default function WaitingListPage() {
     setNotes("");
   };
 
-  const handleStatusChange = async (id: string, newStatus: string) => {
-    await updateStatus.mutateAsync({ id, status: newStatus });
+  const handleStatusChange = async (entry: any, newStatus: string) => {
+    await updateStatus.mutateAsync({ id: entry.id, status: newStatus, appointment_id: entry.appointment_id });
+    if (newStatus === "completed") openWrapUp(entry);
   };
 
   return (
@@ -154,19 +172,34 @@ export default function WaitingListPage() {
                           </span>
                         </td>
                         <td className="py-3 px-4">
-                          <div className="flex items-center gap-1">
+                          <div className="flex flex-wrap items-center gap-1">
+                            {(entry.status === "called" || entry.status === "in_progress") && (
+                              <>
+                                {terms.showDentalChart && (
+                                  <Button asChild variant="ghost" size="sm" className="h-7 px-2 text-xs" title="Open dental chart">
+                                    <Link to={link("dental-charts", entry.patient_id)}><Grid3x3 className="h-3 w-3 mr-1" />Chart</Link>
+                                  </Button>
+                                )}
+                                <Button asChild variant="ghost" size="sm" className="h-7 px-2 text-xs" title="Treatment plan">
+                                  <Link to={link("treatments", entry.patient_id, { tab: "plans" })}><ClipboardList className="h-3 w-3 mr-1" />Plan</Link>
+                                </Button>
+                                <Button asChild variant="ghost" size="sm" className="h-7 px-2 text-xs" title="Clinical notes">
+                                  <Link to={link("patient", entry.patient_id)}><NotebookPen className="h-3 w-3 mr-1" />Notes</Link>
+                                </Button>
+                              </>
+                            )}
                             {entry.status === "waiting" && (
-                              <Button variant="outline" size="sm" className="h-7 text-xs" data-tour="waiting-list-call-next" onClick={() => handleStatusChange(entry.id, "called")}>
+                              <Button variant="outline" size="sm" className="h-7 text-xs" data-tour="waiting-list-call-next" onClick={() => handleStatusChange(entry, "called")}>
                                 Call <ArrowRight className="ml-1 h-3 w-3" />
                               </Button>
                             )}
                             {entry.status === "called" && (
-                              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleStatusChange(entry.id, "in_progress")}>
+                              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleStatusChange(entry, "in_progress")}>
                                 Start <ArrowRight className="ml-1 h-3 w-3" />
                               </Button>
                             )}
                             {entry.status === "in_progress" && (
-                              <Button variant="outline" size="sm" className="h-7 text-xs text-emerald-600" onClick={() => handleStatusChange(entry.id, "completed")}>
+                              <Button variant="outline" size="sm" className="h-7 text-xs text-emerald-600" onClick={() => handleStatusChange(entry, "completed")}>
                                 <CheckCircle2 className="mr-1 h-3 w-3" /> Done
                               </Button>
                             )}
@@ -181,6 +214,30 @@ export default function WaitingListPage() {
           </CardContent>
         </Card>
       </motion.div>
+
+      {completedQueue.length > 0 && (
+        <Card className="glass-card">
+          <CardContent className="p-4 space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Completed today</p>
+            {completedQueue.map((entry) => (
+              <div key={entry.id} className="flex items-center justify-between gap-2 text-sm">
+                <span className="flex items-center gap-2"><CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />{entry.patients?.first_name} {entry.patients?.last_name}</span>
+                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => openWrapUp(entry)}>
+                  <Receipt className="h-3 w-3 mr-1" /> Checkout
+                </Button>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      <VisitCompletionDialog
+        open={!!wrapUp}
+        onOpenChange={(o) => !o && setWrapUp(null)}
+        patientId={wrapUp?.patientId}
+        patientName={wrapUp?.name}
+        appointmentTreatmentId={wrapUp?.treatmentId}
+      />
 
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent className="backdrop-blur-xl bg-card/95">
