@@ -24,8 +24,8 @@ export function PatientVisitBar({ patientId, onClear }: { patientId: string; onC
   const items = [
     terms.showDentalChart ? { page: "dental-charts", label: "Chart", icon: Grid3x3 } : null,
     { page: "treatments", label: "Plan", icon: ClipboardList, extra: { tab: "plans" } },
-    { page: "prescriptions", label: "Rx", icon: Pill },
-    { page: "consent-forms", label: "Consent", icon: FileSignature },
+    { page: "prescriptions", label: "Rx", icon: Pill, extra: { new: "1" } },
+    { page: "consent-forms", label: "Consent", icon: FileSignature, extra: { new: "1" } },
     { page: "patient", label: "Notes", icon: NotebookPen },
   ].filter(Boolean) as { page: string; label: string; icon: any; extra?: Record<string, string> }[];
 
