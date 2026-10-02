@@ -39,7 +39,8 @@ export function AppointmentDetailDialog({ appointment, open, onOpenChange, check
   const [staffId, setStaffId] = useState("");
   const [notes, setNotes] = useState("");
   const [time, setTime] = useState("");
-  const [wrapUpOpen, setWrapUpOpen] = useState(false);
+  const [wrapAppt, setWrapAppt] = useState<AppointmentRow | null>(null);
+  const setWrapUpOpen = (o: boolean) => setWrapAppt(o ? appointment : null);
 
   const startEdit = () => {
     if (!appointment) return;
@@ -89,7 +90,17 @@ export function AppointmentDetailDialog({ appointment, open, onOpenChange, check
     navigate(link(terms.showDentalChart ? "dental-charts" : "patient", appointment.patient_id));
   };
 
-  if (!appointment) return null;
+  const wrapEl = (
+    <VisitCompletionDialog
+      open={!!wrapAppt}
+      onOpenChange={(o) => !o && setWrapAppt(null)}
+      patientId={wrapAppt?.patient_id}
+      patientName={wrapAppt?.patients ? `${wrapAppt.patients.first_name} ${wrapAppt.patients.last_name}` : undefined}
+      appointmentTreatmentId={wrapAppt?.treatment_id}
+    />
+  );
+
+  if (!appointment) return wrapEl;
 
   const statusColors: Record<string, string> = {
     scheduled: "bg-blue-100 text-blue-700",
@@ -213,13 +224,7 @@ export function AppointmentDetailDialog({ appointment, open, onOpenChange, check
         </DialogContent>
       </Dialog>
 
-      <VisitCompletionDialog
-        open={wrapUpOpen}
-        onOpenChange={setWrapUpOpen}
-        patientId={appointment.patient_id}
-        patientName={appointment.patients ? `${appointment.patients.first_name} ${appointment.patients.last_name}` : undefined}
-        appointmentTreatmentId={appointment.treatment_id}
-      />
+      {wrapEl}
     </>
   );
 }
