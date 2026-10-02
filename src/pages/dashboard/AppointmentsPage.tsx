@@ -21,7 +21,8 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useOrg } from "@/hooks/useOrg";
 import { useClinicTerms } from "@/hooks/useClinicTerms";
-import { useWaitingList, useAddToWaitingList } from "@/hooks/useWaitingList";
+import { useWaitingList } from "@/hooks/useWaitingList";
+import { useCheckInAppointment } from "@/hooks/useVisitFlow";
 
 const defaultChairs = ["Chair 1", "Chair 2", "Chair 3"];
 const defaultSlots = ["09:00", "09:30", "10:00", "10:30", "11:00", "11:30", "12:00", "12:30", "13:00", "13:30", "14:00", "14:30", "15:00", "15:30", "16:00"];
@@ -94,7 +95,7 @@ export default function AppointmentsPage() {
 
   const { data: appointments = [], isLoading } = useAppointmentsByDate(currentDate);
   const { data: waitingList = [] } = useWaitingList();
-  const addToQueue = useAddToWaitingList();
+  const addToQueue = useCheckInAppointment();
   const queuedAppointmentIds = new Set(waitingList.map((w) => w.appointment_id).filter(Boolean) as string[]);
   const { data: monthAppointments = [] } = useMonthAppointments(currentDate);
 
@@ -279,6 +280,20 @@ export default function AppointmentsPage() {
                                         </div>
                                         <p className="opacity-75 truncate">{apt.treatment}</p>
                                         <p className="opacity-60 text-[10px] mt-0.5">{apt.dentist}</p>
+                                        {apt.status === "scheduled" && isSameDay(currentDate, new Date()) && (
+                                          queuedAppointmentIds.has(apt.id) ? (
+                                            <p className="mt-1.5 text-[10px] font-semibold text-emerald-700">✓ Checked in</p>
+                                          ) : (
+                                            <button
+                                              type="button"
+                                              className="mt-1.5 w-full rounded-md bg-background/70 border border-current/20 px-2 py-1 text-[10px] font-semibold hover:bg-background"
+                                              disabled={addToQueue.isPending}
+                                              onClick={(e) => { e.stopPropagation(); addToQueue.mutate({ id: apt.id, patient_id: apt.patient_id, chair: apt.chair, notes: apt.notes }); }}
+                                            >
+                                              Check in
+                                            </button>
+                                          )
+                                        )}
                                       </div>
                                     ) : null}
                                   </td>
@@ -406,7 +421,7 @@ export default function AppointmentsPage() {
                                   variant="outline"
                                   className="h-7 text-[11px]"
                                   disabled={addToQueue.isPending || apt.status === "cancelled"}
-                                  onClick={() => addToQueue.mutate({ patient_id: apt.patient_id, appointment_id: apt.id })}
+                                  onClick={() => addToQueue.mutate({ id: apt.id, patient_id: apt.patient_id, chair: apt.chair, notes: apt.notes })}
                                 >
                                   Check in
                                 </Button>
@@ -426,7 +441,7 @@ export default function AppointmentsPage() {
 
       <BookAppointmentDialog open={bookOpen} onOpenChange={setBookOpen} />
       <WalkInDialog open={walkInOpen} onOpenChange={setWalkInOpen} />
-      <AppointmentDetailDialog appointment={selectedAppointment} open={!!selectedAppointment} onOpenChange={(o) => !o && setSelectedAppointment(null)} />
+      <AppointmentDetailDialog appointment={selectedAppointment} open={!!selectedAppointment} onOpenChange={(o) => !o && setSelectedAppointment(null)} checkedIn={!!selectedAppointment && queuedAppointmentIds.has(selectedAppointment.id)} />
     </div>
   );
 }

@@ -12,7 +12,12 @@ import { useDentalChartEntries, useDeleteDentalChartEntry, useCreateDentalChartE
 import { AddProcedureDialog } from "@/components/dashboard/AddProcedureDialog";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Edit2, Trash2, Calendar, User, FileText, ChevronDown, ChevronUp } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { useTreatments } from "@/hooks/useTreatments";
+import { usePatientContext } from "@/hooks/usePatientContext";
+import { PatientVisitBar } from "@/components/dashboard/PatientVisitBar";
+import { conditionProcedure, matchCatalogTreatment, useAddChartItemToPlan } from "@/hooks/useVisitFlow";
+import { Plus, ClipboardPlus, Edit2, Trash2, Calendar, User, FileText, ChevronDown, ChevronUp } from "lucide-react";
 
 const statusOptions = [
   { value: "healthy", label: "Healthy", bg: "bg-emerald-200", border: "border-emerald-400", text: "text-emerald-900", dot: "bg-emerald-400" },
@@ -54,15 +59,20 @@ function ToothButton({
   isSelected,
   onSelect,
   onSetStatus,
+  suggest,
 }: {
   tooth: number;
   status: string;
   isSelected: boolean;
   onSelect: () => void;
-  onSetStatus: (status: string) => void;
+  onSetStatus: (status: string, addToPlan: boolean) => void;
+  suggest: (status: string) => { label: string; cost: number | null } | null;
 }) {
   const style = getStatusStyle(status);
   const [popoverOpen, setPopoverOpen] = useState(false);
+  const [addToPlan, setAddToPlan] = useState(true);
+  const [hovered, setHovered] = useState<string | null>(null);
+  const preview = hovered ? suggest(hovered) : null;
 
   return (
     <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
@@ -85,8 +95,10 @@ function ToothButton({
           {statusOptions.map((opt) => (
             <button
               key={opt.value}
+              onMouseEnter={() => setHovered(opt.value)}
+              onFocus={() => setHovered(opt.value)}
               onClick={() => {
-                onSetStatus(opt.value);
+                onSetStatus(opt.value, addToPlan);
                 setPopoverOpen(false);
               }}
               className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-medium transition-colors hover:opacity-80
@@ -97,6 +109,19 @@ function ToothButton({
             </button>
           ))}
         </div>
+        <label className="mt-2 flex items-center justify-between gap-2 rounded-md border border-border/40 bg-muted/30 px-2 py-1.5 cursor-pointer">
+          <span className="flex items-center gap-1.5 text-[11px] font-medium">
+            <ClipboardPlus className="h-3.5 w-3.5 text-secondary" /> Add to treatment plan
+          </span>
+          <Switch checked={addToPlan} onCheckedChange={setAddToPlan} className="scale-75" />
+        </label>
+        {addToPlan && (
+          <p className="mt-1 px-1 text-[10px] text-muted-foreground">
+            {preview
+              ? `${preview.label}${preview.cost != null ? ` · ₦${preview.cost.toLocaleString()}` : " · price not in catalog"}`
+              : "Treatable conditions are added with the catalog price."}
+          </p>
+        )}
       </PopoverContent>
     </Popover>
   );
@@ -107,7 +132,9 @@ export default function DentalChartsPage() {
   const { currentOrg } = useOrg();
   const isEyeClinic = currentOrg?.clinic_type === "eye";
   const { data: patients = [] } = usePatients();
-  const [selectedPatientId, setSelectedPatientId] = useState<string>("");
+  const { patientId: urlPatientId, setPatientId: setSelectedPatientId } = usePatientContext();
+  const { data: treatments = [] } = useTreatments();
+  const addToPlan = useAddChartItemToPlan();
   const [selectedTooth, setSelectedTooth] = useState<number | null>(null);
   const [procedureOpen, setProcedureOpen] = useState(false);
   const [editEntry, setEditEntry] = useState<any>(null);
@@ -116,7 +143,8 @@ export default function DentalChartsPage() {
   const deleteEntry = useDeleteDentalChartEntry();
   const createEntry = useCreateDentalChartEntry();
   const updateEntry = useUpdateDentalChartEntry();
-  const patientId = selectedPatientId || patients[0]?.id;
+  // Only the patient locked in the URL — never silently default to someone else.
+  const patientId = urlPatientId;
   const { data: entries = [] } = useDentalChartEntries(patientId);
 
   // Wait until the clinic is resolved — redirecting before that would bounce
@@ -150,8 +178,25 @@ export default function DentalChartsPage() {
 
   const selectedData = selectedTooth ? toothData[selectedTooth] : null;
 
-  const handleSetToothStatus = (tooth: number, newStatus: string) => {
+  const suggestFor = (status: string) => {
+    const rule = conditionProcedure[status];
+    if (!rule) return null;
+    const t = matchCatalogTreatment(status, treatments as any);
+    return { label: t?.name || rule.label, cost: t ? Number(t.price || 0) : null, treatmentId: t?.id || null };
+  };
+
+  const handleSetToothStatus = (tooth: number, newStatus: string, planIt = false) => {
     if (!patientId) return;
+    const sug = planIt ? suggestFor(newStatus) : null;
+    if (sug) {
+      addToPlan.mutate({
+        patient_id: patientId,
+        tooth_number: tooth,
+        description: sug.label,
+        treatment_id: sug.treatmentId,
+        estimated_cost: sug.cost ?? 0,
+      });
+    }
     const existing = toothData[tooth];
     const statusLabel = statusOptions.find(s => s.value === newStatus)?.label || newStatus;
 
@@ -192,7 +237,8 @@ export default function DentalChartsPage() {
           status={toothData[tooth]?.status || "healthy"}
           isSelected={selectedTooth === tooth}
           onSelect={() => setSelectedTooth(tooth)}
-          onSetStatus={(s) => handleSetToothStatus(tooth, s)}
+          onSetStatus={(s, plan) => handleSetToothStatus(tooth, s, plan)}
+          suggest={suggestFor}
         />
       ))}
     </div>
@@ -200,6 +246,7 @@ export default function DentalChartsPage() {
 
   return (
     <div className="space-y-6">
+      {patientId && <PatientVisitBar patientId={patientId} onClear={() => { setSelectedPatientId(""); setSelectedTooth(null); }} />}
       <PageHeader
         title="Dental Charts"
         description="Interactive tooth chart per patient"
@@ -253,6 +300,16 @@ export default function DentalChartsPage() {
         </div>
       </PageHeader>
 
+      {!patientId ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <User className="h-8 w-8 mx-auto text-muted-foreground/40 mb-2" />
+            <p className="text-sm font-medium">Choose a patient to open their chart</p>
+            <p className="text-xs text-muted-foreground mt-1">Or open the chart straight from an appointment or the waiting list.</p>
+          </CardContent>
+        </Card>
+      ) : (
+      <>
       {/* Dental Chart Card */}
       <Card data-tour="dental-charts-chart">
         <CardHeader className="pb-4">
@@ -371,6 +428,8 @@ export default function DentalChartsPage() {
           patientId={patientId}
           editEntry={editEntry}
         />
+      )}
+      </>
       )}
     </div>
   );

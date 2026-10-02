@@ -34,6 +34,7 @@ import { toast } from "@/hooks/use-toast";
 import { OfflineDentalHistorySection } from "@/components/dashboard/OfflineDentalHistorySection";
 import { openPatientDocument } from "@/lib/documentUtils";
 import { printPrescription } from "@/lib/printPrescription";
+import { PatientVisitBar } from "@/components/dashboard/PatientVisitBar";
 
 const statusStyles: Record<string, string> = {
   paid: "bg-emerald-100 text-emerald-700",
@@ -178,6 +179,7 @@ export default function PatientProfilePage() {
 
   return (
     <div className="space-y-6">
+      {patientId && <PatientVisitBar patientId={patientId} />}
       {/* Header */}
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => navigate(`${basePath}/patients`)}>

@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { usePatientContext } from "@/hooks/usePatientContext";
+import { PatientVisitBar } from "@/components/dashboard/PatientVisitBar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -130,7 +132,7 @@ export default function TreatmentsPage() {
     }, {
       onSuccess: () => {
         setCreatePlanOpen(false);
-        setPlanForm({ patient_id: "", plan_name: "", description: "", priority: "normal", start_date: format(new Date(), "yyyy-MM-dd"), target_end_date: "" });
+        setPlanForm({ patient_id: ctxPatientId || "", plan_name: "", description: "", priority: "normal", start_date: format(new Date(), "yyyy-MM-dd"), target_end_date: "" });
         setPlanLineItems([]);
       },
     });
@@ -138,8 +140,20 @@ export default function TreatmentsPage() {
 
   const viewingPlan = plans.find((p) => p.id === viewPlanId);
 
+  // Patient locked in the URL: open plans tab, show only their plans, prefill new plan.
+  const { patientId: ctxPatientId, setPatientId: setCtxPatient, searchParams } = usePatientContext();
+  const [tab, setTab] = useState(searchParams.get("tab") === "plans" || ctxPatientId ? "plans" : "catalog");
+  useEffect(() => {
+    if (ctxPatientId) {
+      setTab("plans");
+      setPlanForm((f) => ({ ...f, patient_id: ctxPatientId }));
+    }
+  }, [ctxPatientId]);
+  const visiblePlans = ctxPatientId ? filteredPlans.filter((p) => p.patient_id === ctxPatientId) : filteredPlans;
+
   return (
     <div className="space-y-6">
+      {ctxPatientId && <PatientVisitBar patientId={ctxPatientId} onClear={() => setCtxPatient("")} />}
       <PageHeader
         title="Treatments & Procedures"
         description="Treatment catalog and patient treatment plans"
@@ -180,7 +194,7 @@ export default function TreatmentsPage() {
         }}
       />
 
-      <Tabs defaultValue="catalog" className="space-y-4">
+      <Tabs value={tab} onValueChange={setTab} className="space-y-4">
         <TabsList className="bg-muted/50" data-tour="treatments-tabs">
           <TabsTrigger value="catalog" className="gap-2"><Stethoscope className="h-4 w-4" /> Catalog</TabsTrigger>
           <TabsTrigger value="plans" className="gap-2"><ClipboardList className="h-4 w-4" /> Treatment Plans</TabsTrigger>
@@ -267,11 +281,11 @@ export default function TreatmentsPage() {
             )}
           </div>
 
-          {filteredPlans.length === 0 ? (
+          {visiblePlans.length === 0 ? (
             <EmptyState icon={ClipboardList} title="No treatment plans" description="Create a treatment plan to organize multi-visit procedures for patients." actionLabel="New Treatment Plan" onAction={() => { setCreatePlanOpen(true); if (planLineItems.length === 0) addPlanItem(); }} />
           ) : (
             <motion.div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" variants={stagger.container} initial="hidden" animate="visible" data-tour="treatments-plans-list">
-              {filteredPlans.map((plan) => {
+              {visiblePlans.map((plan) => {
                 const progress = plan.items_count > 0 ? Math.round((plan.completed_count / plan.items_count) * 100) : 0;
                 return (
                   <motion.div key={plan.id} variants={stagger.item}>
