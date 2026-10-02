@@ -6,14 +6,14 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { useUpdateAppointment, type AppointmentRow } from "@/hooks/useAppointments";
 import { useDentists } from "@/hooks/useStaff";
 import { useClinicTerms } from "@/hooks/useClinicTerms";
-import { CreateInvoiceDialog } from "@/components/dashboard/CreateInvoiceDialog";
+import { VisitCompletionDialog } from "@/components/dashboard/VisitCompletionDialog";
+import { useCheckInAppointment } from "@/hooks/useVisitFlow";
+import { useClinicLinks } from "@/hooks/usePatientContext";
+import { useNavigate } from "react-router-dom";
+import { UserCheck, Stethoscope } from "lucide-react";
 
 const statusOptions = ["scheduled", "in-progress", "completed", "cancelled"];
 const chairs = ["Chair 1", "Chair 2", "Chair 3"];
@@ -22,9 +22,14 @@ interface AppointmentDetailDialogProps {
   appointment: AppointmentRow | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  checkedIn?: boolean;
 }
 
-export function AppointmentDetailDialog({ appointment, open, onOpenChange }: AppointmentDetailDialogProps) {
+export function AppointmentDetailDialog({ appointment, open, onOpenChange, checkedIn }: AppointmentDetailDialogProps) {
+  const checkIn = useCheckInAppointment();
+  const link = useClinicLinks();
+  const navigate = useNavigate();
+  const [justCheckedIn, setJustCheckedIn] = useState(false);
   const terms = useClinicTerms();
   const updateAppointment = useUpdateAppointment();
   const { data: dentists = [] } = useDentists();
@@ -34,8 +39,7 @@ export function AppointmentDetailDialog({ appointment, open, onOpenChange }: App
   const [staffId, setStaffId] = useState("");
   const [notes, setNotes] = useState("");
   const [time, setTime] = useState("");
-  const [billingPromptOpen, setBillingPromptOpen] = useState(false);
-  const [invoiceOpen, setInvoiceOpen] = useState(false);
+  const [wrapUpOpen, setWrapUpOpen] = useState(false);
 
   const startEdit = () => {
     if (!appointment) return;
@@ -65,10 +69,24 @@ export function AppointmentDetailDialog({ appointment, open, onOpenChange }: App
     if (!appointment) return;
     await updateAppointment.mutateAsync({ id: appointment.id, status: newStatus });
     if (newStatus === "completed") {
-      setBillingPromptOpen(true);
+      onOpenChange(false);
+      setWrapUpOpen(true);
       return;
     }
     onOpenChange(false);
+  };
+
+  const handleCheckIn = async () => {
+    if (!appointment) return;
+    await checkIn.mutateAsync({ id: appointment.id, patient_id: appointment.patient_id, chair: appointment.chair, notes: appointment.notes });
+    setJustCheckedIn(true);
+  };
+
+  const handleStartVisit = async () => {
+    if (!appointment) return;
+    await updateAppointment.mutateAsync({ id: appointment.id, status: "in-progress" });
+    onOpenChange(false);
+    navigate(link(terms.showDentalChart ? "dental-charts" : "patient", appointment.patient_id));
   };
 
   if (!appointment) return null;
@@ -82,7 +100,7 @@ export function AppointmentDetailDialog({ appointment, open, onOpenChange }: App
 
   return (
     <>
-      <Dialog open={open} onOpenChange={(o) => { if (!o) setEditing(false); onOpenChange(o); }}>
+      <Dialog open={open} onOpenChange={(o) => { if (!o) { setEditing(false); setJustCheckedIn(false); } onOpenChange(o); }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -161,10 +179,27 @@ export function AppointmentDetailDialog({ appointment, open, onOpenChange }: App
                   <Button variant="outline" size="sm" onClick={() => handleQuickStatus("cancelled")} className="text-red-600 hover:text-red-700">
                     Cancel Appointment
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => handleQuickStatus("in-progress")}>
-                    Start
+                  {checkedIn || justCheckedIn ? (
+                    <span className="inline-flex items-center text-xs font-medium text-emerald-600 px-2"><UserCheck className="h-3.5 w-3.5 mr-1" />In waiting list</span>
+                  ) : (
+                    <Button variant="outline" size="sm" onClick={handleCheckIn} disabled={checkIn.isPending}>
+                      <UserCheck className="h-3.5 w-3.5 mr-1" /> {checkIn.isPending ? "Checking in..." : "Check In Patient"}
+                    </Button>
+                  )}
+                  <Button variant="outline" size="sm" onClick={handleStartVisit} disabled={updateAppointment.isPending}>
+                    <Stethoscope className="h-3.5 w-3.5 mr-1" /> Start Visit
                   </Button>
                 </>
+              )}
+              {appointment.status === "in-progress" && (
+                <Button variant="outline" size="sm" onClick={() => { onOpenChange(false); navigate(link(terms.showDentalChart ? "dental-charts" : "patient", appointment.patient_id)); }}>
+                  <Stethoscope className="h-3.5 w-3.5 mr-1" /> Open Visit
+                </Button>
+              )}
+              {appointment.status === "completed" && (
+                <Button variant="outline" size="sm" onClick={() => { onOpenChange(false); setWrapUpOpen(true); }}>
+                  Checkout
+                </Button>
               )}
               {appointment.status === "in-progress" && (
                 <Button variant="outline" size="sm" onClick={() => handleQuickStatus("completed")} className="text-emerald-600 hover:text-emerald-700">
@@ -178,29 +213,12 @@ export function AppointmentDetailDialog({ appointment, open, onOpenChange }: App
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={billingPromptOpen} onOpenChange={setBillingPromptOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Visit completed</AlertDialogTitle>
-            <AlertDialogDescription>
-              Create an invoice for {appointment.treatments?.name || "this visit"} now?
-              {appointment.treatment_id ? " The patient and treatment are already selected." : " The patient is already selected."}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => onOpenChange(false)}>Not now</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { setBillingPromptOpen(false); setInvoiceOpen(true); }}>
-              Create invoice
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <CreateInvoiceDialog
-        open={invoiceOpen}
-        onOpenChange={setInvoiceOpen}
-        preselectedPatientId={appointment.patient_id}
-        preselectedTreatmentIds={appointment.treatment_id ? [appointment.treatment_id] : undefined}
+      <VisitCompletionDialog
+        open={wrapUpOpen}
+        onOpenChange={setWrapUpOpen}
+        patientId={appointment.patient_id}
+        patientName={appointment.patients ? `${appointment.patients.first_name} ${appointment.patients.last_name}` : undefined}
+        appointmentTreatmentId={appointment.treatment_id}
       />
     </>
   );
